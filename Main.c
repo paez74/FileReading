@@ -3,10 +3,36 @@
 #include <string.h>
 #include <stdbool.h>
 //Gustavo Paez Villalobos A01039751
-// Rafa Mtz
+// Rafa Mtz a01039710
 // Christopher Parga
 // Grupo 3
 
+void detectComand(char *comando){
+  int decision = 0;
+  if (strcmp(comando,":q") == 0)
+  {
+    decision = 1;
+  } else if (strcmp(comando, ":f") == 0)
+  {
+    decision = 2;
+  }
+  
+  switch (decision)
+  {
+  case 1:
+  // Aqui iria funcion f que se encarga de contar el numero de veces que aparece la palabra en el texto
+      printf("leyo comando F");
+    break;
+
+  case 2:
+  // Aqui iria la 
+      printf("leyo comando ");
+  break;
+  
+  default:
+    break;
+  }
+}
 
 
 int main() {
@@ -53,11 +79,8 @@ int main() {
     gets(command); 
     printf("%s\n",command);
     
-    /* 
-    Aqui va la logica(funcion) que dependiendo el comando es la otra funcion que correria
-    */
-    
-
+    detectComand(command);
+  
   }
 
   if(!strcmp(command,":wq")){

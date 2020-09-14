@@ -4,70 +4,90 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
-#include <errno.h>
-
-# define SIZE 30
+#include <stdbool.h>
 //Gustavo Paez Villalobos A01039751
-// Rafa Mtz
-// Christopher Parga A00818942
+// Rafa Mtz a01039710
+// Christopher Parga
 // Grupo 3
 
-static volatile sig_atomic_t keep_running = 1;
-// Funcion para contar el total de lineas
-int countlines(char *filename)
-{                             
-  FILE *fp = fopen(filename,"r");
-  int ch=0;
-  int lines=0;
+void detectComand(char *comando){
+  int decision = 0;
+  if (strcmp(comando,":q") == 0)
+  {
+    decision = 1;
+  } else if (strcmp(comando, ":f") == 0)
+  {
+    decision = 2;
+  }
+  
+  switch (decision)
+  {
+  case 1:
+  // Aqui iria funcion f que se encarga de contar el numero de veces que aparece la palabra en el texto
+      printf("leyo comando F");
+    break;
+
+  case 2:
+  // Aqui iria la 
+      printf("leyo comando ");
+  break;
+  
+  default:
+    break;
+  }
 }
 
 
-static void sig_handler(int _){
-    puts("Handler.");
-    keep_running = 1;
-}
+int main() {
+  int num;
+  FILE *fptr;
+  char textName[20];
+  char command[20];
+  int numLines = 0;
+  char (*lines)[50] = NULL;
+  
 
+  printf( "Please write the name of the file: \n" );
+  gets(textName);
 
-  void main() {
-    signal(SIGINT, sig_handler);
-    int num;
-    FILE *fptr;
-    char textName[20];
-    char command[20];
-    char ch;
-    char * line = NULL;
-    size_t len = 0;
-    size_t read;
-    
-    printf( "Please write the name of the file: \n" );
-    gets(textName);
+  fptr = fopen(textName,"rb");
 
-    fptr = fopen(textName,"rb");
-    if(fptr == NULL){
-      printf("El archivo no existe\n");
-      fclose(fptr);
-      exit(1);
+  if(fptr == NULL){
+    printf("El archivo no existe\n");
+    fclose(fptr);
+    exit(1);
+  }
+
+  if (!(lines = malloc (40 * sizeof *lines))) { 
+        return 0;
     }
-    const int numLines = countlines(textName);
-    
-    
-    //Logica para leer archivo linea por linea 
-    while ((read = getline(&line, &len, fptr)) != -1) {
-          printf("Retrieved line of length %zu:\n", read);
-          // To do añadir el arreglo aqui
-          
-      }
-    while(strcmp(command,":q") && strcmp(command,":wq")){
-      gets(command); 
-      printf("%s\n",command);
-      
-      /* 
-      Aqui va la logica(funcion) que dependiendo el comando es la otra funcion que correria
-      */
-      
-
+  
+  //Logica para leer archivo linea por linea 
+  while ( fgets(lines[numLines], 50, fptr)) {
+        char *ptr = lines[numLines];
+        for(; *ptr && *ptr != '\n';ptr++){}
+        *ptr = 0;
+        numLines++;
     }
 
+  printf("%d\n",numLines);
+  fclose (fptr); 
+  
+  for(int i = 0; i < numLines; i++)
+  {
+    printf("%s\n",lines[i]);
+  }
+
+  while(strcmp(command,":q") && strcmp(command,":wq")){
+    gets(command); 
+    printf("%s\n",command);
+    
+    detectComand(command);
+  
+  }
+
+  if(!strcmp(command,":wq")){
+    printf("Salir y guardar archivo\n");
 
     fclose(fptr);
     if(!strcmp(command,":wq")){

@@ -1,3 +1,7 @@
+#define _DEFAULT_SOURCE
+#define _BSD_SOURCE
+#define _GNU_SOURCE
+
 #include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
@@ -18,7 +22,7 @@ struct editorConfig { // estructura para obtener el valor de la terminal para po
   int screenrows;
   int screencols;
   int numrows;
-  erow rows;
+  erow *row;
   struct termios orig_termios;
 };
 struct abuf { // estructura de un buffer, para tener strings dinamicos
@@ -148,16 +152,35 @@ int getWindowSize(int *rows, int *cols) {
   }
 }
 
-
-void editorOpen() {
-  char *line = "Hello, world!";
-  ssize_t linelen = 13;
-  E.rows.size = linelen;
-  E.rows.chars = malloc(linelen + 1); // memory alloc 
-  memcpy(E.rows.chars, line, linelen);
-  E.rows.chars[linelen] = '\0';
-  E.numrows = 1;
+void editorAppendRow(char *s, size_t len) {
+  E.row = realloc(E.row, sizeof(erow) * (E.numrows + 1)); // se realloca memoria, haciendo crecer a e.row con la nueva linea se usa el espacio de erow
+  
+  int at = E.numrows;
+  E.row[at].size = len;
+  E.row[at].chars = malloc(len + 1); // se prepara el espacio para el renglon
+  memcpy(E.row[at].chars, s, len);
+  E.row[at].chars[len] = '\0';
+  E.numrows++;
 }
+
+void editorOpen(char *filename) {
+  FILE *fp = fopen(filename, "r");
+  if (!fp) die("fopen");
+
+  char *line = NULL;
+  size_t linecap = 0; // se inicializa en 0 para que la funcion getline te de el valor del tamaño de la linea
+  ssize_t linelen;
+  while ((linelen = getline(&line, &linecap, fp)) != -1) { // mientras se siga podiendo leer unea linea del archivo correra esta parte
+    while (linelen > 0 && (line[linelen - 1] == '\n' ||
+                           line[linelen - 1] == '\r'))
+      linelen--;
+    editorAppendRow(line, linelen); // aqui se agrega un renglon leido
+  }
+  free(line);
+  fclose(fp);
+}
+
+
 
 void editorMoveCursor(int key) {
   switch (key) { // un switch para mover el cursor dependiendo  de WASD
@@ -208,7 +231,7 @@ void editorDrawRows(struct abuf *ab) {
   int y;
   for (y = 0; y < E.screenrows; y++) {
     if( y >= E.numrows){
-    if (y == E.screenrows / 2) { // cuando se encuentra  la mitad de la terminal
+    if (y == E.screenrows / 2 && E.numrows == 0) { // cuando se encuentra  la mitad de la terminal
       char welcome[80];
       int welcomelen = snprintf(welcome, sizeof(welcome),
         "Bienvenidos al Editor");
@@ -224,9 +247,9 @@ void editorDrawRows(struct abuf *ab) {
       abAppend(ab, "*", 1);
     }
    } else {
-       int len = E.rows.size;
+       int len = E.row[y].size;
        if (len > E.screencols) len = E.screencols; 
-       abAppend(ab, E.rows.chars, len);
+       abAppend(ab, E.row[y].chars, len); // se agregan los erows al buffer actual
    }
 
     abAppend(ab, "\x1b[K", 3);  // escape sequence [K  erases part of the current line, 2 toda la linea, 1 a la izq del cursor, y 0 a la derecha , 0 es el default, y se dan 3 bytes
@@ -259,13 +282,14 @@ void initEditor() {
   E.cx = 0;
   E.cy = 0;
   E.numrows = 0;
+  E.row = NULL;
   if (getWindowSize(&E.screenrows, &E.screencols) == -1) die("getWindowSize"); // llamo get windows size al iniciar el proyecto , para la struct de la terminal
 }
 
-int main () {
+int main (int argc, char *argv[]) {
     enableRawMode();
     initEditor();
-    editorOpen();
+    if(argc >= 2) editorOpen(argv[1]);
     //char c; 
     while (1) {
         editorRefreshScreen();

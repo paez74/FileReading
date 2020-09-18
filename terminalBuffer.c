@@ -19,10 +19,12 @@ typedef struct erow { // estructura para guardar una linea de texto entro de la 
 
 struct editorConfig { // estructura para obtener el valor de la terminal para poder calcular rows 
   int cx, cy; // curso x y cursos y es la posicion del cursor dentro de la terminal para poder moverlo
+  int rowoff; // current row position of the file
+  int coloff; // current column offset
   int screenrows;
   int screencols;
   int numrows;
-  erow *row;
+  erow *row; // dynamic array of rows of the file
   struct termios orig_termios;
 };
 struct abuf { // estructura de un buffer, para tener strings dinamicos
@@ -183,23 +185,39 @@ void editorOpen(char *filename) {
 
 
 void editorMoveCursor(int key) {
+  erow *row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
+
   switch (key) { // un switch para mover el cursor dependiendo  de WASD
     case ARROW_LEFT:
       if(E.cx != 0)
       E.cx--;
+      else if (E.cy > 0) {
+        E.cy--;
+        E.cx = E.row[E.cy].size;
+      }
       break;
     case ARROW_RIGHT:
-      if(E.cx != E.screencols -1)
+      if (row && E.cx < row->size)
       E.cx++;
+      else if (row && E.cx == row->size) {
+        E.cy++;
+        E.cx = 0;
+      }
       break;
     case ARROW_UP:
       if(E.cy != 0)
       E.cy--;
       break;
     case ARROW_DOWN:
-      if(E.cy != E.screenrows -1)
+      if(E.cy < E.numrows) // no puedes bajar mas de los renglones
       E.cy++;
       break;
+  }
+
+  row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
+  int rowlen = row ? row->size : 0;
+  if (E.cx > rowlen) { // en caso de que al bajar el renglon este sea mas corto al actual
+    E.cx = rowlen;
   }
 }
 
@@ -227,9 +245,26 @@ void editorProcessKeypress() { // handles keypress
   }
 }
 
+// function to scroll and know in which row we are 
+void editorScroll() {
+  if (E.cy < E.rowoff) { // se basa en la posicion actual de y en la terminal  y del rowoff para calcularlo
+    E.rowoff = E.cy;
+  }
+  if (E.cy >= E.rowoff + E.screenrows) { // si esta "out of bounds"
+    E.rowoff = E.cy - E.screenrows + 1;
+  }
+  if (E.cx < E.coloff) { // calcula posicion de columna
+    E.coloff = E.cx;
+  }
+  if (E.cx >= E.coloff + E.screencols) { // si esta out of bounds en x
+    E.coloff = E.cx - E.screencols + 1;
+  }
+}
+
 void editorDrawRows(struct abuf *ab) {
   int y;
   for (y = 0; y < E.screenrows; y++) {
+    int filerow = y + E.rowoff;
     if( y >= E.numrows){
     if (y == E.screenrows / 2 && E.numrows == 0) { // cuando se encuentra  la mitad de la terminal
       char welcome[80];
@@ -247,9 +282,10 @@ void editorDrawRows(struct abuf *ab) {
       abAppend(ab, "*", 1);
     }
    } else {
-       int len = E.row[y].size;
+       int len = E.row[filerow].size - E.coloff; 
+       if (len < 0) len = 0;
        if (len > E.screencols) len = E.screencols; 
-       abAppend(ab, E.row[y].chars, len); // se agregan los erows al buffer actual
+       abAppend(ab, &E.row[filerow].chars[E.coloff], len); // se agregan los erows al buffer actual
    }
 
     abAppend(ab, "\x1b[K", 3);  // escape sequence [K  erases part of the current line, 2 toda la linea, 1 a la izq del cursor, y 0 a la derecha , 0 es el default, y se dan 3 bytes
@@ -260,6 +296,7 @@ void editorDrawRows(struct abuf *ab) {
 }
 
 void editorRefreshScreen() { // limpia la pantalla
+  editorScroll();
   struct abuf ab = ABUF_INIT; // inicializo el bugger ABUF_INIT es funcion macro que pone al apuntador viendo a null y el lenght en 0
                                //abAppend(&ab, "\x1b[2J", 4); el 4 significa 5 bytoues of of terminal \x1b es el escpaee character  escape sequences always start with this and are followe by [ characters 
   abAppend(&ab, "\x1b[H", 3);  // estas funciones [ dicen  a la terminal como mover el keyboard,mouse etc. el comando J  limpia la pantalla despues de /x1b el 2 es un param que 
@@ -267,8 +304,8 @@ void editorRefreshScreen() { // limpia la pantalla
                                       // aqui estan todas las escape sequences http://ascii-table.com/ansi-escape-sequences-vt-100.php
                                       // user guide -> https://vt100.net/docs/vt100-ug/chapter3.html
                                       // AQUi el [H,3 mueve el cursor al inicio del aterminal 
-  char buf[32];
-  snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cy + 1, E.cx + 1); // se usa escape sequence [H  la cual mueve el cursos, usando 2 variables %d y %d que serian E.cy y E.cx ambas + 1
+  char buf[32];                               // se resta E.rowoff para tener la posicion relativa tanto a la terminal como al archivo
+  snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowoff) + 1, (E.cx - E.coloff) + 1); // se usa escape sequence [H  la cual mueve el cursos, usando 2 variables %d y %d que serian E.cy y E.cx ambas + 1
   abAppend(&ab, buf, strlen(buf));
   write(STDOUT_FILENO, ab.b , ab.len);  
   abFree(&ab);
@@ -281,6 +318,8 @@ void editorRefreshScreen() { // limpia la pantalla
 void initEditor() {
   E.cx = 0;
   E.cy = 0;
+  E.rowoff = 0;
+  E.coloff = 0;
   E.numrows = 0;
   E.row = NULL;
   if (getWindowSize(&E.screenrows, &E.screencols) == -1) die("getWindowSize"); // llamo get windows size al iniciar el proyecto , para la struct de la terminal

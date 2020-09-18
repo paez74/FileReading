@@ -8,13 +8,17 @@
 #include <stdlib.h>
 #include <sys/ioctl.h> // aqui se trae la funcion para obtener el tamaño de la terminal
 #include <sys/types.h>
+#include <stdarg.h>
 #include <termios.h>
 #include <unistd.h>
 #include <string.h>
+#include <time.h>
 
 typedef struct erow { // estructura para guardar una linea de texto entro de la terminal 
     int size;
+    int rsize;
     char *chars;
+    char *render; // render para tabs y espacios  no veo que sea necesario podriamos quitarlo all together
 } erow;
 
 struct editorConfig { // estructura para obtener el valor de la terminal para poder calcular rows 
@@ -25,6 +29,8 @@ struct editorConfig { // estructura para obtener el valor de la terminal para po
   int screencols;
   int numrows;
   erow *row; // dynamic array of rows of the file
+  char statusmsg[80]; // mensajes para que despliegue el usuario
+  time_t statusmsg_time;
   struct termios orig_termios;
 };
 struct abuf { // estructura de un buffer, para tener strings dinamicos
@@ -154,6 +160,28 @@ int getWindowSize(int *rows, int *cols) {
   }
 }
 
+
+void editorUpdateRow(erow *row) { // esta funcion toma los renders del renglon para rehacer el renglanon en la terminal y mostrarlo de manera correcta si es que tiene tabs etc
+  int tabs = 0;
+  int j;
+  for (j = 0; j < row->size; j++)
+    if (row->chars[j] == '\t') tabs++; // va eliminando tabs
+  free(row->render);
+  row->render = malloc(row->size + tabs*7 + 1);
+
+  int idx = 0;
+  for (j = 0; j < row->size; j++) {
+    if (row->chars[j] == '\t') {
+      row->render[idx++] = ' ';
+      while (idx % 8 != 0) row->render[idx++] = ' ';
+    } else {
+      row->render[idx++] = row->chars[j];
+    }
+  }
+  row->render[idx] = '\0';
+  row->rsize = idx; // idx tiene el numero de caracteres copiados a render 
+}
+
 void editorAppendRow(char *s, size_t len) {
   E.row = realloc(E.row, sizeof(erow) * (E.numrows + 1)); // se realloca memoria, haciendo crecer a e.row con la nueva linea se usa el espacio de erow
   
@@ -162,6 +190,9 @@ void editorAppendRow(char *s, size_t len) {
   E.row[at].chars = malloc(len + 1); // se prepara el espacio para el renglon
   memcpy(E.row[at].chars, s, len);
   E.row[at].chars[len] = '\0';
+  E.row[at].rsize = 0;
+  E.row[at].render = NULL;
+  editorUpdateRow(&E.row[at]);
   E.numrows++;
 }
 
@@ -282,17 +313,25 @@ void editorDrawRows(struct abuf *ab) {
       abAppend(ab, "*", 1);
     }
    } else {
-       int len = E.row[filerow].size - E.coloff; 
+       int len = E.row[filerow].rsize - E.coloff;  // se usa rsize por el render de cada row y evitar malformaciones
        if (len < 0) len = 0;
        if (len > E.screencols) len = E.screencols; 
-       abAppend(ab, &E.row[filerow].chars[E.coloff], len); // se agregan los erows al buffer actual
+       abAppend(ab, &E.row[filerow].render[E.coloff], len); // se agregan los erows al buffer actual usando render para que este clean
    }
 
     abAppend(ab, "\x1b[K", 3);  // escape sequence [K  erases part of the current line, 2 toda la linea, 1 a la izq del cursor, y 0 a la derecha , 0 es el default, y se dan 3 bytes
-    if (y < E.screenrows - 1) {
-      abAppend(ab, "\r\n", 2);
-    }
+    abAppend(ab, "\r\n", 2);
+    
   }
+}
+
+
+void editorDrawMessageBar(struct abuf *ab) {
+  abAppend(ab, "\x1b[K", 3);  // escape sequence [K clears message bar ]
+  int msglen = strlen(E.statusmsg);
+  if (msglen > E.screencols) msglen = E.screencols; // se corta el mensaje para que quedpa en todo el width de la pantalla
+  if (msglen && time(NULL) - E.statusmsg_time < 5) // message time solo dura 5 segundos por el momento la pantalla se refreseca despues de cada keypress
+    abAppend(ab, E.statusmsg, msglen);
 }
 
 void editorRefreshScreen() { // limpia la pantalla
@@ -300,10 +339,10 @@ void editorRefreshScreen() { // limpia la pantalla
   struct abuf ab = ABUF_INIT; // inicializo el bugger ABUF_INIT es funcion macro que pone al apuntador viendo a null y el lenght en 0
                                //abAppend(&ab, "\x1b[2J", 4); el 4 significa 5 bytoues of of terminal \x1b es el escpaee character  escape sequences always start with this and are followe by [ characters 
   abAppend(&ab, "\x1b[H", 3);  // estas funciones [ dicen  a la terminal como mover el keyboard,mouse etc. el comando J  limpia la pantalla despues de /x1b el 2 es un param que 
-  editorDrawRows(&ab);                    // le dice sea toda la pantalla, si usas 1 envez de 2 seria hasta donde esta el cursos
-                                      // aqui estan todas las escape sequences http://ascii-table.com/ansi-escape-sequences-vt-100.php
-                                      // user guide -> https://vt100.net/docs/vt100-ug/chapter3.html
-                                      // AQUi el [H,3 mueve el cursor al inicio del aterminal 
+  editorDrawRows(&ab);         // le dice sea toda la pantalla, si usas 1 envez de 2 seria hasta donde esta el cursos
+  editorDrawMessageBar(&ab);    // aqui estan todas las escape sequences http://ascii-table.com/ansi-escape-sequences-vt-100.php
+                               // user guide -> https://vt100.net/docs/vt100-ug/chapter3.html
+                              // AQUi el [H,3 mueve el cursor al inicio del aterminal 
   char buf[32];                               // se resta E.rowoff para tener la posicion relativa tanto a la terminal como al archivo
   snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowoff) + 1, (E.cx - E.coloff) + 1); // se usa escape sequence [H  la cual mueve el cursos, usando 2 variables %d y %d que serian E.cy y E.cx ambas + 1
   abAppend(&ab, buf, strlen(buf));
@@ -313,7 +352,13 @@ void editorRefreshScreen() { // limpia la pantalla
 // Escape routes 
 // [H , 3 bytes  command actually takes two arguments: the row number and the column number at which to position the cursor argumentos se separan con ; [12;20H] row 12 columna 20 
 
-
+void editorSetStatusMessage(const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(E.statusmsg, sizeof(E.statusmsg), fmt, ap);
+  va_end(ap);
+  E.statusmsg_time = time(NULL);
+}
 
 void initEditor() {
   E.cx = 0;
@@ -322,14 +367,17 @@ void initEditor() {
   E.coloff = 0;
   E.numrows = 0;
   E.row = NULL;
+  E.statusmsg[0] = '\0';
+  E.statusmsg_time = 0;
   if (getWindowSize(&E.screenrows, &E.screencols) == -1) die("getWindowSize"); // llamo get windows size al iniciar el proyecto , para la struct de la terminal
+  E.screenrows -=1;
 }
 
 int main (int argc, char *argv[]) {
     enableRawMode();
     initEditor();
     if(argc >= 2) editorOpen(argv[1]);
-    //char c; 
+    editorSetStatusMessage("HELP: Ctrl-Q = quit");
     while (1) {
         editorRefreshScreen();
         editorProcessKeypress();

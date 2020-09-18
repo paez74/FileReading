@@ -41,6 +41,7 @@ struct abuf { // estructura de un buffer, para tener strings dinamicos
 
 
 enum editorKey { // enum para mappear las teclas con formato WASD
+  BACKSPACE = 127,
   ARROW_LEFT = 1000, // se le da este valor para que las teclas no interfieran con los valores de ascci normales 
   ARROW_RIGHT,
   ARROW_UP,
@@ -192,7 +193,7 @@ void editorAppendRow(char *s, size_t len) {
   E.row[at].chars[len] = '\0';
   E.row[at].rsize = 0;
   E.row[at].render = NULL;
-  editorUpdateRow(&E.row[at]);
+  editorUpdateRow(&E.row[at]); // updatea el renglon
   E.numrows++;
 }
 
@@ -252,9 +253,29 @@ void editorMoveCursor(int key) {
   }
 }
 
+void editorRowInsertChar(erow *row, int at, int c) {
+  if (at < 0 || at > row->size) at = row->size;
+  row->chars = realloc(row->chars, row->size + 2);
+  memmove(&row->chars[at + 1], &row->chars[at], row->size - at + 1); // como memcpy pero salva que el source y destination arrays sean el mismo
+  row->size++;
+  row->chars[at] = c;
+  editorUpdateRow(row);
+}
+
+void editorInsertChar(int c) {
+  if (E.cy == E.numrows) { // cursor esta en el final 
+    editorAppendRow("", 0); // se agrega renglon nuevo 
+  }
+  editorRowInsertChar(&E.row[E.cy], E.cx, c);
+  E.cx++;
+}
+
 void editorProcessKeypress() { // handles keypress 
   int c = editorReadKey();
   switch (c) {
+    case '\r':  // enter key 
+      
+      break;
     case CTRL_KEY('q'): // si es ctl + q se cierra la pantalla 
       clearScreen();
       exit(0);
@@ -267,11 +288,19 @@ void editorProcessKeypress() { // handles keypress
           editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
       }
       break;
+      case BACKSPACE:
+      case DEL_KEY:
+           break;
     case ARROW_UP:
     case ARROW_DOWN:
     case ARROW_LEFT:
     case ARROW_RIGHT:
       editorMoveCursor(c);
+      break;
+    case '\x1b':// escape 
+       break;
+    default: 
+      editorInsertChar(c);
       break;
   }
 }
@@ -291,6 +320,8 @@ void editorScroll() {
     E.coloff = E.cx - E.screencols + 1;
   }
 }
+
+
 
 void editorDrawRows(struct abuf *ab) {
   int y;

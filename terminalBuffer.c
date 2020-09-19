@@ -184,10 +184,11 @@ void editorUpdateRow(erow *row) { // esta funcion toma los renders del renglon p
   row->rsize = idx; // idx tiene el numero de caracteres copiados a render 
 }
 
-void editorAppendRow(char *s, size_t len) {
+void editorInsertRow(int at, char *s, size_t len) {
+  if (at < 0 || at > E.numrows) return;
   E.row = realloc(E.row, sizeof(erow) * (E.numrows + 1)); // se realloca memoria, haciendo crecer a e.row con la nueva linea se usa el espacio de erow
-  
-  int at = E.numrows;
+  memmove(&E.row[at + 1], &E.row[at], sizeof(erow) * (E.numrows - at));  // make room at specified index
+
   E.row[at].size = len;
   E.row[at].chars = malloc(len + 1); // se prepara el espacio para el renglon
   memcpy(E.row[at].chars, s, len);
@@ -238,7 +239,7 @@ void editorOpen(char *filename) {
     while (linelen > 0 && (line[linelen - 1] == '\n' ||
                            line[linelen - 1] == '\r'))
       linelen--;
-    editorAppendRow(line, linelen); // aqui se agrega un renglon leido
+    editorInsertRow(E.numrows,line, linelen); // aqui se agrega un renglon leido
   }
   free(line);
   fclose(fp);
@@ -337,10 +338,25 @@ void editorRowDelChar(erow *row, int at) {
 
 void editorInsertChar(int c) {
   if (E.cy == E.numrows) { // cursor esta en el final 
-    editorAppendRow("", 0); // se agrega renglon nuevo 
+    editorInsertRow(E.numrows,"", 0); // se agrega renglon nuevo 
   }
   editorRowInsertChar(&E.row[E.cy], E.cx, c);
   E.cx++;
+}
+
+void editorInsertNewline() {
+  if (E.cx == 0) {
+    editorInsertRow(E.cy, "", 0);
+  } else {
+    erow *row = &E.row[E.cy];
+    editorInsertRow(E.cy + 1, &row->chars[E.cx], row->size - E.cx); // la columna se mantiene 
+    row = &E.row[E.cy];
+    row->size = E.cx;
+    row->chars[row->size] = '\0';
+    editorUpdateRow(row); // la row actual se updatea con espacio vacio
+  }
+  E.cy++;
+  E.cx = 0;
 }
 void editorDelChar() {
   if (E.cy == E.numrows) return; // si el cursor esta fuera del tamaño regresa
@@ -361,6 +377,7 @@ void editorProcessKeypress() { // handles keypress
   int c = editorReadKey();
   switch (c) {
     case '\r':  // enter key 
+      editorInsertNewline();
       break;
     case CTRL_KEY('q'): // si es ctl + q se cierra la pantalla 
       if (quitTimes > 0) {

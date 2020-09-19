@@ -14,6 +14,7 @@
 #include <string.h>
 #include <time.h>
 #include <fcntl.h>
+#include <stdbool.h>
 
 typedef struct erow { // estructura para guardar una linea de texto entro de la terminal 
     int size;
@@ -31,6 +32,7 @@ struct editorConfig { // estructura para obtener el valor de la terminal para po
   int numrows;
   erow *row; // dynamic array of rows of the file
   char statusmsg[80]; // mensajes para que despliegue el usuario
+  char *command; // comandos desplegados por el usuario
   time_t statusmsg_time;
   struct termios orig_termios;
 };
@@ -40,7 +42,7 @@ struct abuf { // estructura de un buffer, para tener strings dinamicos
 };
 
 char fileName[20];
-
+bool rawMode = 0;
 enum editorKey { // enum para mappear las teclas con formato WASD
   BACKSPACE = 127,
   ARROW_LEFT = 1000, // se le da este valor para que las teclas no interfieran con los valores de ascci normales 
@@ -465,6 +467,12 @@ char *editorPrompt(char *prompt) {
     }
   }
 }
+
+void readCommand(){
+  free(E.command);
+  E.command = editorPrompt("Escribe el comando: %s");
+  editorSetStatusMessage("%s comando escrito", E.command);
+}
 void editorSave() {
   if (fileName != NULL) {
     editorPrompt("Save as: %s");
@@ -559,6 +567,11 @@ int main (int argc, char *argv[]) {
     editorSetStatusMessage("HELP: Ctrl-Q = quit | Ctrl-S = save");
     while (1) {
         editorRefreshScreen();
+        if(!rawMode) {
+        readCommand("Escriba su comando:");
+        // Funcion para leer comando 
+        rawMode = 1;
+       }else
         editorProcessKeypress();
     }
     return 0;

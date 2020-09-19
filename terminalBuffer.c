@@ -13,6 +13,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <time.h>
+#include <fcntl.h>
 
 typedef struct erow { // estructura para guardar una linea de texto entro de la terminal 
     int size;
@@ -38,7 +39,7 @@ struct abuf { // estructura de un buffer, para tener strings dinamicos
   int len;
 };
 
-
+char fileName[20];
 
 enum editorKey { // enum para mappear las teclas con formato WASD
   BACKSPACE = 127,
@@ -197,6 +198,35 @@ void editorAppendRow(char *s, size_t len) {
   E.numrows++;
 }
 
+void editorFreeRow(erow *row) {
+  free(row->render); // libera espacio 
+  free(row->chars); // libera chars 
+}
+
+void editorDelRow(int at) {
+  if (at < 0 || at >= E.numrows) return;
+  editorFreeRow(&E.row[at]);  //free the memory owned by the row 
+  memmove(&E.row[at], &E.row[at + 1], sizeof(erow) * (E.numrows - at - 1)); // overwrite deleted row
+  E.numrows--; 
+}
+
+char *editorRowsToString(int *buflen) {
+  int totlen = 0;
+  int j;
+  for (j = 0; j < E.numrows; j++)
+    totlen += E.row[j].size + 1; // length of each row o text 
+  *buflen = totlen;
+  char *buf = malloc(totlen); // allocate required memory 
+  char *p = buf; // p apunta a buf  y se modifica en el loop 
+  for (j = 0; j < E.numrows; j++) { // loop through the rows
+    memcpy(p, E.row[j].chars, E.row[j].size); // memcopy the contents of each row to the end of the buffer appending new lines as weell 
+    p += E.row[j].size;
+    *p = '\n';
+    p++;
+  }
+  return buf;
+}
+
 void editorOpen(char *filename) {
   FILE *fp = fopen(filename, "r");
   if (!fp) die("fopen");
@@ -214,6 +244,33 @@ void editorOpen(char *filename) {
   fclose(fp);
 }
 
+void editorSetStatusMessage(const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(E.statusmsg, sizeof(E.statusmsg), fmt, ap);
+  va_end(ap);
+  E.statusmsg_time = time(NULL);
+}
+
+void editorSave() {
+  if (fileName == NULL) return;
+  int len;
+  char *buf = editorRowsToString(&len); // se llama editors rows to strings para tener el buffer completo de la info nueva
+  int fd = open(fileName, O_RDWR | O_CREAT, 0644);  // se abre o se crea un archivo nuevo en caso de que no exista
+  if( fd != -1) {
+   if( ftruncate(fd, len) != 1){ // resizes the file size to specific length
+    if(write(fd, buf, len) == len){ // se escribe el buffer
+    close(fd); // se cierra la file
+    free(buf); 
+    editorSetStatusMessage("%d bytes guardados", len); // mensaje de que si se guardo , se puede quitar
+    return; // return 
+    }
+  }
+  close(fd); // cierra archivo
+}
+   free(buf);
+   editorSetStatusMessage("No se puede guardar! I/O error: %s", strerror(errno)); // mensaje de error
+}
 
 
 void editorMoveCursor(int key) {
@@ -262,6 +319,22 @@ void editorRowInsertChar(erow *row, int at, int c) {
   editorUpdateRow(row);
 }
 
+void editorRowAppendString(erow *row, char *s, size_t len) {
+  row->chars = realloc(row->chars, row->size + len + 1); // reallocate 
+  memcpy(&row->chars[row->size], s, len); // copy memory
+  row->size += len; // se añade el length 
+  row->chars[row->size] = '\0'; // el endline
+  editorUpdateRow(row);
+}
+
+void editorRowDelChar(erow *row, int at) {
+  if (at < 0 || at >= row->size) return; // valida que sea una posicion valida
+  memmove(&row->chars[at], &row->chars[at + 1], row->size - at); // se mueve un bit para atras "borrando el char"
+  row->size--;
+  editorUpdateRow(row);
+}
+
+
 void editorInsertChar(int c) {
   if (E.cy == E.numrows) { // cursor esta en el final 
     editorAppendRow("", 0); // se agrega renglon nuevo 
@@ -269,16 +342,38 @@ void editorInsertChar(int c) {
   editorRowInsertChar(&E.row[E.cy], E.cx, c);
   E.cx++;
 }
-
+void editorDelChar() {
+  if (E.cy == E.numrows) return; // si el cursor esta fuera del tamaño regresa
+  if (E.cx == 0 && E.cy == 0) return; // si es el inicio de un renglon
+  erow *row = &E.row[E.cy]; // se trae el row actual
+  if (E.cx > 0) { // si hay un caracter a la izq se borra sino, no 
+    editorRowDelChar(row, E.cx - 1);
+    E.cx--;
+  } else {
+    E.cx = E.row[E.cy -1].size;
+    editorRowAppendString(&E.row[E.cy -1], row->chars, row->size);
+    editorDelRow(E.cy);
+    E.cy--;
+  }
+}
 void editorProcessKeypress() { // handles keypress 
+  static int quitTimes = 1; // puede ser global
   int c = editorReadKey();
   switch (c) {
     case '\r':  // enter key 
-      
       break;
     case CTRL_KEY('q'): // si es ctl + q se cierra la pantalla 
+      if (quitTimes > 0) {
+        editorSetStatusMessage("Se podrian perder los cambios "
+          "presiona Ctrl-Q de nuevo para salir.");
+        quitTimes--;
+        return;
+      }
       clearScreen();
       exit(0);
+      break;
+    case CTRL_KEY('s'): // maps ctl + s para que le de save
+      editorSave();
       break;
     case PAGE_UP:
     case PAGE_DOWN:
@@ -290,6 +385,8 @@ void editorProcessKeypress() { // handles keypress
       break;
       case BACKSPACE:
       case DEL_KEY:
+        if (c == DEL_KEY) editorMoveCursor(ARROW_RIGHT);
+        editorDelChar();
            break;
     case ARROW_UP:
     case ARROW_DOWN:
@@ -383,13 +480,7 @@ void editorRefreshScreen() { // limpia la pantalla
 // Escape routes 
 // [H , 3 bytes  command actually takes two arguments: the row number and the column number at which to position the cursor argumentos se separan con ; [12;20H] row 12 columna 20 
 
-void editorSetStatusMessage(const char *fmt, ...) {
-  va_list ap;
-  va_start(ap, fmt);
-  vsnprintf(E.statusmsg, sizeof(E.statusmsg), fmt, ap);
-  va_end(ap);
-  E.statusmsg_time = time(NULL);
-}
+
 
 void initEditor() {
   E.cx = 0;
@@ -407,8 +498,10 @@ void initEditor() {
 int main (int argc, char *argv[]) {
     enableRawMode();
     initEditor();
+    //fileName = argv[1];
+    memcpy(fileName,"Arch1.txt",9); // copiador el nombre del archivo
     if(argc >= 2) editorOpen(argv[1]);
-    editorSetStatusMessage("HELP: Ctrl-Q = quit");
+    editorSetStatusMessage("HELP: Ctrl-Q = quit | Ctrl-S = save");
     while (1) {
         editorRefreshScreen();
         editorProcessKeypress();

@@ -43,6 +43,7 @@ struct abuf { // estructura de un buffer, para tener strings dinamicos
 
 char fileName[20];
 bool rawMode = 0;
+
 enum editorKey { // enum para mappear las teclas con formato WASD
   BACKSPACE = 127,
   ARROW_LEFT = 1000, // se le da este valor para que las teclas no interfieran con los valores de ascci normales 
@@ -472,16 +473,19 @@ void readCommand(){
   free(E.command);
   E.command = editorPrompt("Escribe el comando: %s");
   editorSetStatusMessage("%s comando escrito", E.command);
+  switch(E.command[0]){
+    case ':':
+        if(E.command[1] == 'q') {
+          clearScreen();
+          exit(0);
+        }else if(E.command[1] == 'e')
+        {
+          rawMode = 1; 
+        }
+        break;
+  }
 }
 void editorSave() {
-  if (fileName != NULL) {
-    editorPrompt("Save as: %s");
-    if (fileName == NULL) {
-      editorSetStatusMessage("Save aborted");
-      return;
-    }
-    return;
-    }
   int len;
   char *buf = editorRowsToString(&len); // se llama editors rows to strings para tener el buffer completo de la info nueva
   int fd = open(fileName, O_RDWR | O_CREAT, 0644);  // se abre o se crea un archivo nuevo en caso de que no exista
@@ -500,21 +504,13 @@ void editorSave() {
    editorSetStatusMessage("No se puede guardar! I/O error: %s", strerror(errno)); // mensaje de error
 }
 void editorProcessKeypress() { // handles keypress 
-  static int quitTimes = 1; // puede ser global
   int c = editorReadKey();
   switch (c) {
     case '\r':  // enter key 
       editorInsertNewline();
       break;
     case CTRL_KEY('q'): // si es ctl + q se cierra la pantalla 
-      if (quitTimes > 0) {
-        editorSetStatusMessage("Se podrian perder los cambios "
-          "presiona Ctrl-Q de nuevo para salir.");
-        quitTimes--;
-        return;
-      }
-      clearScreen();
-      exit(0);
+       rawMode = 0;
       break;
     case CTRL_KEY('s'): // maps ctl + s para que le de save
       editorSave();
@@ -552,6 +548,7 @@ void initEditor() {
   E.coloff = 0;
   E.numrows = 0;
   E.row = NULL;
+  E.command = NULL;
   E.statusmsg[0] = '\0';
   E.statusmsg_time = 0;
   if (getWindowSize(&E.screenrows, &E.screencols) == -1) die("getWindowSize"); // llamo get windows size al iniciar el proyecto , para la struct de la terminal
@@ -570,9 +567,8 @@ int main (int argc, char *argv[]) {
         if(!rawMode) {
         readCommand("Escriba su comando:");
         // Funcion para leer comando 
-        rawMode = 1;
        }else
-        editorProcessKeypress();
+        editorProcessKeypress(); // esto es cuando esta en rawmode
     }
     return 0;
 }

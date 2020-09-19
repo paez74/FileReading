@@ -253,25 +253,7 @@ void editorSetStatusMessage(const char *fmt, ...) {
   E.statusmsg_time = time(NULL);
 }
 
-void editorSave() {
-  if (fileName == NULL) return;
-  int len;
-  char *buf = editorRowsToString(&len); // se llama editors rows to strings para tener el buffer completo de la info nueva
-  int fd = open(fileName, O_RDWR | O_CREAT, 0644);  // se abre o se crea un archivo nuevo en caso de que no exista
-  if( fd != -1) {
-   if( ftruncate(fd, len) != 1){ // resizes the file size to specific length
-    if(write(fd, buf, len) == len){ // se escribe el buffer
-    close(fd); // se cierra la file
-    free(buf); 
-    editorSetStatusMessage("%d bytes guardados", len); // mensaje de que si se guardo , se puede quitar
-    return; // return 
-    }
-  }
-  close(fd); // cierra archivo
-}
-   free(buf);
-   editorSetStatusMessage("No se puede guardar! I/O error: %s", strerror(errno)); // mensaje de error
-}
+
 
 
 void editorMoveCursor(int key) {
@@ -372,52 +354,7 @@ void editorDelChar() {
     E.cy--;
   }
 }
-void editorProcessKeypress() { // handles keypress 
-  static int quitTimes = 1; // puede ser global
-  int c = editorReadKey();
-  switch (c) {
-    case '\r':  // enter key 
-      editorInsertNewline();
-      break;
-    case CTRL_KEY('q'): // si es ctl + q se cierra la pantalla 
-      if (quitTimes > 0) {
-        editorSetStatusMessage("Se podrian perder los cambios "
-          "presiona Ctrl-Q de nuevo para salir.");
-        quitTimes--;
-        return;
-      }
-      clearScreen();
-      exit(0);
-      break;
-    case CTRL_KEY('s'): // maps ctl + s para que le de save
-      editorSave();
-      break;
-    case PAGE_UP:
-    case PAGE_DOWN:
-      {
-        int times = E.screenrows;
-        while (times--)
-          editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
-      }
-      break;
-      case BACKSPACE:
-      case DEL_KEY:
-        if (c == DEL_KEY) editorMoveCursor(ARROW_RIGHT);
-        editorDelChar();
-           break;
-    case ARROW_UP:
-    case ARROW_DOWN:
-    case ARROW_LEFT:
-    case ARROW_RIGHT:
-      editorMoveCursor(c);
-      break;
-    case '\x1b':// escape 
-       break;
-    default: 
-      editorInsertChar(c);
-      break;
-  }
-}
+
 
 // function to scroll and know in which row we are 
 void editorScroll() {
@@ -497,8 +434,109 @@ void editorRefreshScreen() { // limpia la pantalla
 // Escape routes 
 // [H , 3 bytes  command actually takes two arguments: the row number and the column number at which to position the cursor argumentos se separan con ; [12;20H] row 12 columna 20 
 
-
-
+char *editorPrompt(char *prompt) {
+  size_t bufsize = 128;
+  char *buf = malloc(bufsize); // buf is dynamically allocated by bufsize
+  size_t buflen = 0;
+  buf[0] = '\0';
+  while (1) { // loop infinito que pone el mensaje , refresca la pantalla y espera por keypress 
+              // prompt will be a format 
+    editorSetStatusMessage(prompt, buf);
+    editorRefreshScreen();
+    int c = editorReadKey();
+    if (c == DEL_KEY  || c == BACKSPACE) {
+      if (buflen != 0) buf[--buflen] = '\0';// adding backspace, delete  to editor Prompt
+    } else if (c == '\x1b') { // escape key is pressed, to exit the editorPrompt
+      editorSetStatusMessage("");
+      free(buf);
+      return NULL;
+    } else if (c == '\r') { // si presionan enter y el input no esta vacio , el input es regresado sino se añade al bug
+      if (buflen != 0) {
+        editorSetStatusMessage("");
+        return buf;
+      }
+    } else if (!iscntrl(c) && c < 128) { // si el tamaño llega a max se multiplica x 2 del buffer
+      if (buflen == bufsize - 1) {
+        bufsize *= 2;
+        buf = realloc(buf, bufsize);
+      }
+      buf[buflen++] = c;
+      buf[buflen] = '\0';
+    }
+  }
+}
+void editorSave() {
+  if (fileName != NULL) {
+    editorPrompt("Save as: %s");
+    if (fileName == NULL) {
+      editorSetStatusMessage("Save aborted");
+      return;
+    }
+    return;
+    }
+  int len;
+  char *buf = editorRowsToString(&len); // se llama editors rows to strings para tener el buffer completo de la info nueva
+  int fd = open(fileName, O_RDWR | O_CREAT, 0644);  // se abre o se crea un archivo nuevo en caso de que no exista
+  if( fd != -1) {
+   if( ftruncate(fd, len) != 1){ // resizes the file size to specific length
+    if(write(fd, buf, len) == len){ // se escribe el buffer
+    close(fd); // se cierra la file
+    free(buf); 
+    editorSetStatusMessage("%d bytes guardados", len); // mensaje de que si se guardo , se puede quitar
+    return; // return 
+    }
+  }
+  close(fd); // cierra archivo
+}
+   free(buf);
+   editorSetStatusMessage("No se puede guardar! I/O error: %s", strerror(errno)); // mensaje de error
+}
+void editorProcessKeypress() { // handles keypress 
+  static int quitTimes = 1; // puede ser global
+  int c = editorReadKey();
+  switch (c) {
+    case '\r':  // enter key 
+      editorInsertNewline();
+      break;
+    case CTRL_KEY('q'): // si es ctl + q se cierra la pantalla 
+      if (quitTimes > 0) {
+        editorSetStatusMessage("Se podrian perder los cambios "
+          "presiona Ctrl-Q de nuevo para salir.");
+        quitTimes--;
+        return;
+      }
+      clearScreen();
+      exit(0);
+      break;
+    case CTRL_KEY('s'): // maps ctl + s para que le de save
+      editorSave();
+      break;
+    case PAGE_UP:
+    case PAGE_DOWN:
+      {
+        int times = E.screenrows;
+        while (times--)
+          editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
+      }
+      break;
+      case BACKSPACE:
+      case DEL_KEY:
+        if (c == DEL_KEY) editorMoveCursor(ARROW_RIGHT);
+        editorDelChar();
+           break;
+    case ARROW_UP:
+    case ARROW_DOWN:
+    case ARROW_LEFT:
+    case ARROW_RIGHT:
+      editorMoveCursor(c);
+      break;
+    case '\x1b':// escape 
+       break;
+    default: 
+      editorInsertChar(c);
+      break;
+  }
+}
 void initEditor() {
   E.cx = 0;
   E.cy = 0;

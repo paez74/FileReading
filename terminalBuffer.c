@@ -256,8 +256,27 @@ void editorSetStatusMessage(const char *fmt, ...) {
   E.statusmsg_time = time(NULL);
 }
 
-
-
+void goToRow(int row){
+  if (row < E.screenrows)
+  {
+    int resultado = (row - E.rowoff)
+    if (resultado < 0)
+    {
+      for (int i = resultado; i < 0; i++)
+      {
+        editorMoveCursor(ARROW_UP)
+      }
+    } else
+    {
+      for (int i = restrict; i > resultado; i--)
+      {
+        editorMoveCursor(ARROW_DOWN)
+      }
+    }
+  } else {
+    printf("Out of bounds")
+  }
+}
 
 void editorMoveCursor(int key) {
   erow *row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];

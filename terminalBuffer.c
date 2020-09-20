@@ -266,13 +266,13 @@ void goToRow(int row){
       {
         for (int i = res; i < 0 ; i++)
         {
-          editorMoveCursor(ARROW_UP);
+          editorMoveCursor(1002);
         }
       } else 
       {
         for (int i = res; i > 0 ; i--)
         {
-          editorMoveCursor(ARROW_DOWN);
+          editorMoveCursor(1003);
         }
       }
     } 
@@ -490,21 +490,98 @@ char *editorPrompt(char *prompt) {
     }
   }
 }
+int numberOcurrences(const char* findtext){
+  int counter = 0;
+
+  if(findtext == NULL){
+    return  0;
+  }
+  
+  for (int rows = 0; rows < E.numrows; rows++){
+    erow *actualRow = &E.row[rows];
+    const char *p = actualRow->chars;
+    while( (p = strstr(p,findtext)) != NULL){
+      p += strlen(findtext);
+      counter++;
+    }
+  }
+
+  return counter;
+}
+
+void replaceWord(const char* oldW, const char* newW) { 
+    char buffer[100];
+    int newWlen = strlen(newW); 
+    int oldWlen = strlen(oldW); 
+  
+    for(int rows = 0; rows < E.numrows; rows++){
+    erow *actualRow = &E.row[rows];
+    const char *p = actualRow->chars;
+    int ocurrences =  numberOcurrences(oldW);
+    if(ocurrences > 0){
+      while ( (p = strstr(p,oldW))){
+        strncpy(buffer,actualRow->chars,p-actualRow->chars);
+        buffer[p-actualRow->chars] = '\0';
+        strcat(buffer, newW);
+        strcat(buffer, p+strlen(oldW));
+        strcpy(actualRow->chars, buffer);
+        p++;
+      }
+      editorUpdateRow(actualRow); 
+    }
+  }
+} 
+
 
 void readCommand(){
   free(E.command);
-  E.command = editorPrompt("Escribe el comando: %s");
+  E.command = editorPrompt("Escribe el comando %s");
+  char *findText = E.command;
+  char delim[] = " ";
+  char aux[100];
   editorSetStatusMessage("%s comando escrito", E.command);
   switch(E.command[0]){
     case ':':
         if(E.command[1] == 'q') {
-          clearScreen();
-          exit(0);
-        } else if(E.command[1] == 'e')
-        {
+          free(E.command);
+          E.command = editorPrompt("Quieres guardar los cambios? (y/n): %s");
+
+          if (E.command[0] == 'y')
+          {
+            editorSave();
+            clearScreen();
+            exit(0);
+          } else {
+            clearScreen();
+            exit(0);
+          }
+        
+        }else if(E.command[1] == 'e'){
           rawMode = 1; 
+        }else if(E.command[1] == 'w'){
+          editorSave();
+          clearScreen();
+          exit(0); 
+        }else if(E.command[1] == 'f'){
+          if(strlen(E.command) + 1 > 4){
+          strcpy(E.command,findText);
+          memmove(findText,findText+3,strlen(findText));
+          int ocurrences = numberOcurrences(findText);
+          editorSetStatusMessage("%d el resultado es:", ocurrences);
+          }
+        }else if(E.command[1] == 'r'){
+          strcpy(E.command,findText);
+          memmove(findText,findText+3,strlen(findText));
+          char *ptr = strtok(findText,delim);
+          char *toReplace, *replacement;
+          toReplace = ptr;
+          ptr = strtok(NULL,delim);
+          replacement = ptr;
+          replaceWord(toReplace,replacement);
+          editorRefreshScreen();
         } else if (E.command[1] == 'n')
         {
+          E.cy = 0;
           free(E.command);
           E.command = editorPrompt("Escribe el renglon al que quieres ir: %s");
           int num = atoi(E.command);
@@ -586,14 +663,14 @@ void initEditor() {
 int main (int argc, char *argv[]) {
     enableRawMode();
     initEditor();
-    //fileName = argv[1];
-    memcpy(fileName,"Arch1.txt",9); // copiador el nombre del archivo
+    char *temp = argv[1];
+    strcpy(fileName,temp);
     if(argc >= 2) editorOpen(argv[1]);
     editorSetStatusMessage("HELP: Ctrl-Q = quit | Ctrl-S = save");
     while (1) {
         editorRefreshScreen();
         if(!rawMode) {
-        readCommand("Escriba su comando:");
+        readCommand("Escriba su comando ");
         // Funcion para leer comando 
        }else
         editorProcessKeypress(); // esto es cuando esta en rawmode

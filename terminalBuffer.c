@@ -257,24 +257,27 @@ void editorSetStatusMessage(const char *fmt, ...) {
 }
 
 void goToRow(int row){
+  int res = ((row - E.rowoff) - 1);
   if (row < E.screenrows)
   {
-    int resultado = (row - E.rowoff)
-    if (resultado < 0)
+    if (E.rowoff != row)
     {
-      for (int i = resultado; i < 0; i++)
+      if (res < 0)
       {
-        editorMoveCursor(ARROW_UP)
-      }
-    } else
-    {
-      for (int i = restrict; i > resultado; i--)
+        for (int i = res; i < 0 ; i++)
+        {
+          editorMoveCursor(ARROW_UP);
+        }
+      } else 
       {
-        editorMoveCursor(ARROW_DOWN)
+        for (int i = res; i > 0 ; i--)
+        {
+          editorMoveCursor(ARROW_DOWN);
+        }
       }
-    }
+    } 
   } else {
-    printf("Out of bounds")
+    
   }
 }
 
@@ -497,9 +500,15 @@ void readCommand(){
         if(E.command[1] == 'q') {
           clearScreen();
           exit(0);
-        }else if(E.command[1] == 'e')
+        } else if(E.command[1] == 'e')
         {
           rawMode = 1; 
+        } else if (E.command[1] == 'n')
+        {
+          free(E.command);
+          E.command = editorPrompt("Escribe el renglon al que quieres ir: %s");
+          int num = atoi(E.command);
+          goToRow(num);
         }
         break;
   }

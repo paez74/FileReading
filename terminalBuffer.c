@@ -468,50 +468,11 @@ char *editorPrompt(char *prompt) {
     }
   }
 }
-
-char* replaceWord(const char* oldW, const char* newW) 
-{ 
-    char* result; 
-    int i, cnt = 0; 
-    int newWlen = strlen(newW); 
-    int oldWlen = strlen(oldW); 
-  
-    // Counting the number of times old word 
-    // occur in the string 
-    for (i = 0; s[i] != '\0'; i++) { 
-        if (strstr(&s[i], oldW) == &s[i]) { 
-            cnt++; 
-  
-            // Jumping to index after the old word. 
-            i += oldWlen - 1; 
-        } 
-    } 
-  
-    // Making new string of enough length 
-    result = (char*)malloc(i + cnt * (newWlen - oldWlen) + 1); 
-  
-    i = 0; 
-    while (*s) { 
-        // compare the substring with the result 
-        if (strstr(s, oldW) == s) { 
-            strcpy(&result[i], newW); 
-            i += newWlen; 
-            s += oldWlen; 
-        } 
-        else
-            result[i++] = *s++; 
-    } 
-  
-    result[i] = '\0'; 
-    return result; 
-} 
-
-
-void numberOcurrences(const char* findtext){
-  unsigned counter = 0;
+int numberOcurrences(const char* findtext){
+  int counter = 0;
 
   if(findtext == NULL){
-    return;
+    return  0;
   }
   
   for (int rows = 0; rows < E.numrows; rows++){
@@ -522,15 +483,40 @@ void numberOcurrences(const char* findtext){
       counter++;
     }
   }
-  printf("%s aparece: %u veces", findtext, counter);
-  editorSetStatusMessage("%s aparece: %u veces", findtext, counter);
+  return counter;
 }
+
+void replaceWord(const char* oldW, const char* newW) { 
+    char buffer[100];
+    int newWlen = strlen(newW); 
+    int oldWlen = strlen(oldW); 
+  
+    for(int rows = 0; rows < E.numrows; rows++){
+    erow *actualRow = &E.row[rows];
+    const char *p = actualRow->chars;
+    int ocurrences =  numberOcurrences(oldW);
+    if(ocurrences > 0){
+      while ( (p = strstr(p,oldW))){
+        strncpy(buffer,actualRow->chars,p-actualRow->chars);
+        buffer[p-actualRow->chars] = '\0';
+        strcat(buffer, newW);
+        strcat(buffer, p+strlen(oldW));
+        strcpy(actualRow->chars, buffer);
+        p++;
+      }
+      editorUpdateRow(actualRow);
+      printf("%s", actualRow->chars);  
+    }
+  }
+} 
+
 
 void readCommand(){
   free(E.command);
   E.command = editorPrompt("Escribe el comando %s");
   char *findText = E.command;
   char delim[] = " ";
+  char aux[100];
   editorSetStatusMessage("%s comando escrito", E.command);
   switch(E.command[0]){
     case ':':
@@ -540,9 +526,11 @@ void readCommand(){
         }else if(E.command[1] == 'e'){
           rawMode = 1; 
         }else if(E.command[1] == 'f'){
+          if(strlen(E.command) + 1 > 4){
           strcpy(E.command,findText);
           memmove(findText,findText+3,strlen(findText));
-          numberOcurrences(findText);
+          int ocurrences = numberOcurrences(findText);
+          }
         }else if(E.command[1] == 'r'){
           strcpy(E.command,findText);
           memmove(findText,findText+3,strlen(findText));
@@ -551,7 +539,8 @@ void readCommand(){
           toReplace = ptr;
           ptr = strtok(NULL,delim);
           replacement = ptr;
-          replaceText(toReplace,replaceText);
+          replaceWord(toReplace,replacement);
+          editorRefreshScreen();
         }
         break;
   }

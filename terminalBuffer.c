@@ -256,8 +256,30 @@ void editorSetStatusMessage(const char *fmt, ...) {
   E.statusmsg_time = time(NULL);
 }
 
-
-
+void goToRow(int row){
+  int res = ((row - E.rowoff) - 1);
+  if (row < E.screenrows)
+  {
+    if (E.rowoff != row)
+    {
+      if (res < 0)
+      {
+        for (int i = res; i < 0 ; i++)
+        {
+          editorMoveCursor(ARROW_UP);
+        }
+      } else 
+      {
+        for (int i = res; i > 0 ; i--)
+        {
+          editorMoveCursor(ARROW_DOWN);
+        }
+      }
+    } 
+  } else {
+    
+  }
+}
 
 void editorMoveCursor(int key) {
   erow *row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
@@ -541,6 +563,12 @@ void readCommand(){
           replacement = ptr;
           replaceWord(toReplace,replacement);
           editorRefreshScreen();
+        } else if (E.command[1] == 'n')
+        {
+          free(E.command);
+          E.command = editorPrompt("Escribe el renglon al que quieres ir: %s");
+          int num = atoi(E.command);
+          goToRow(num);
         }
         break;
   }

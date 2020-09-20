@@ -526,8 +526,7 @@ void replaceWord(const char* oldW, const char* newW) {
         strcpy(actualRow->chars, buffer);
         p++;
       }
-      editorUpdateRow(actualRow);
-      printf("%s", actualRow->chars);  
+      editorUpdateRow(actualRow); 
     }
   }
 } 

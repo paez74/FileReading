@@ -266,13 +266,13 @@ void goToRow(int row){
       {
         for (int i = res; i < 0 ; i++)
         {
-          editorMoveCursor(ARROW_UP);
+          editorMoveCursor(1002);
         }
       } else 
       {
         for (int i = res; i > 0 ; i--)
         {
-          editorMoveCursor(ARROW_DOWN);
+          editorMoveCursor(1003);
         }
       }
     } 
@@ -505,6 +505,7 @@ int numberOcurrences(const char* findtext){
       counter++;
     }
   }
+
   return counter;
 }
 
@@ -542,15 +543,31 @@ void readCommand(){
   switch(E.command[0]){
     case ':':
         if(E.command[1] == 'q') {
-          clearScreen();
-          exit(0);
+          free(E.command);
+          E.command = editorPrompt("Quieres guardar los cambios? (y/n): %s");
+
+          if (E.command[0] == 'y')
+          {
+            editorSave();
+            clearScreen();
+            exit(0);
+          } else {
+            clearScreen();
+            exit(0);
+          }
+        
         }else if(E.command[1] == 'e'){
           rawMode = 1; 
+        }else if(E.command[1] == 'w'){
+          editorSave();
+          clearScreen();
+          exit(0); 
         }else if(E.command[1] == 'f'){
           if(strlen(E.command) + 1 > 4){
           strcpy(E.command,findText);
           memmove(findText,findText+3,strlen(findText));
           int ocurrences = numberOcurrences(findText);
+          editorSetStatusMessage("%d el resultado es:", ocurrences);
           }
         }else if(E.command[1] == 'r'){
           strcpy(E.command,findText);
@@ -564,6 +581,7 @@ void readCommand(){
           editorRefreshScreen();
         } else if (E.command[1] == 'n')
         {
+          E.cy = 0;
           free(E.command);
           E.command = editorPrompt("Escribe el renglon al que quieres ir: %s");
           int num = atoi(E.command);

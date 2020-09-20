@@ -469,18 +469,89 @@ char *editorPrompt(char *prompt) {
   }
 }
 
+char* replaceWord(const char* oldW, const char* newW) 
+{ 
+    char* result; 
+    int i, cnt = 0; 
+    int newWlen = strlen(newW); 
+    int oldWlen = strlen(oldW); 
+  
+    // Counting the number of times old word 
+    // occur in the string 
+    for (i = 0; s[i] != '\0'; i++) { 
+        if (strstr(&s[i], oldW) == &s[i]) { 
+            cnt++; 
+  
+            // Jumping to index after the old word. 
+            i += oldWlen - 1; 
+        } 
+    } 
+  
+    // Making new string of enough length 
+    result = (char*)malloc(i + cnt * (newWlen - oldWlen) + 1); 
+  
+    i = 0; 
+    while (*s) { 
+        // compare the substring with the result 
+        if (strstr(s, oldW) == s) { 
+            strcpy(&result[i], newW); 
+            i += newWlen; 
+            s += oldWlen; 
+        } 
+        else
+            result[i++] = *s++; 
+    } 
+  
+    result[i] = '\0'; 
+    return result; 
+} 
+
+
+void numberOcurrences(const char* findtext){
+  unsigned counter = 0;
+
+  if(findtext == NULL){
+    return;
+  }
+  
+  for (int rows = 0; rows < E.numrows; rows++){
+    erow *actualRow = &E.row[rows];
+    const char *p = actualRow->chars;
+    while( (p = strstr(p,findtext)) != NULL){
+      p += strlen(findtext);
+      counter++;
+    }
+  }
+  printf("%s aparece: %u veces", findtext, counter);
+  editorSetStatusMessage("%s aparece: %u veces", findtext, counter);
+}
+
 void readCommand(){
   free(E.command);
-  E.command = editorPrompt("Escribe el comando: %s");
+  E.command = editorPrompt("Escribe el comando %s");
+  char *findText = E.command;
+  char delim[] = " ";
   editorSetStatusMessage("%s comando escrito", E.command);
   switch(E.command[0]){
     case ':':
         if(E.command[1] == 'q') {
           clearScreen();
           exit(0);
-        }else if(E.command[1] == 'e')
-        {
+        }else if(E.command[1] == 'e'){
           rawMode = 1; 
+        }else if(E.command[1] == 'f'){
+          strcpy(E.command,findText);
+          memmove(findText,findText+3,strlen(findText));
+          numberOcurrences(findText);
+        }else if(E.command[1] == 'r'){
+          strcpy(E.command,findText);
+          memmove(findText,findText+3,strlen(findText));
+          char *ptr = strtok(findText,delim);
+          char *toReplace, *replacement;
+          toReplace = ptr;
+          ptr = strtok(NULL,delim);
+          replacement = ptr;
+          replaceText(toReplace,replaceText);
         }
         break;
   }
@@ -558,14 +629,14 @@ void initEditor() {
 int main (int argc, char *argv[]) {
     enableRawMode();
     initEditor();
-    //fileName = argv[1];
-    memcpy(fileName,"Arch1.txt",9); // copiador el nombre del archivo
+    char *temp = argv[1];
+    strcpy(fileName,temp);
     if(argc >= 2) editorOpen(argv[1]);
     editorSetStatusMessage("HELP: Ctrl-Q = quit | Ctrl-S = save");
     while (1) {
         editorRefreshScreen();
         if(!rawMode) {
-        readCommand("Escriba su comando:");
+        readCommand("Escriba su comando ");
         // Funcion para leer comando 
        }else
         editorProcessKeypress(); // esto es cuando esta en rawmode

@@ -18,25 +18,25 @@
 #include <fcntl.h>
 #include <stdbool.h>
 
-typedef struct erow { // estructura para guardar una linea de texto entro de la terminal 
+typedef struct renglon { // estructura para guardar una linea de texto entro de la terminal 
     int size;
     char *chars;
-} erow;
+} renglon;
 
-struct editorConfig { // estructura para obtener el valor de la terminal para poder calcular rows 
+struct terminal { // estructura para obtener el valor de la terminal para poder calcular rows 
   int cx, cy; // curso x y cursos y es la posicion del cursor dentro de la terminal para poder moverlo
   int rowoff; // current row position of the file
   int coloff; // current column offset
   int screenrows;
   int screencols;
   int numrows;
-  erow *row; // dynamic array of rows of the file
+  renglon *row; // dynamic array of rows of the file
   char statusmsg[80]; // mensajes para que despliegue el usuario
   char *command; // comandos desplegados por el usuario
   time_t statusmsg_time;
   struct termios orig_termios;
 };
-struct abuf { // estructura de un buffer, para tener strings dinamicos
+struct sbuffer { // estructura de un buffer, para tener strings dinamicos
   char *b;
   int len;
 };
@@ -50,24 +50,22 @@ enum editorKey { // enum para mappear las teclas con formato WASD
   ARROW_RIGHT,
   ARROW_UP,
   ARROW_DOWN,
-  PAGE_UP,
-  PAGE_DOWN,
   DEL_KEY 
 };
 
-struct editorConfig E;
+struct terminal term;
 
 #define CTRL_KEY(k) ((k) & 0x1f) // se define la funcion macro de CTRL_KEY para obtener valores de clt q, ctl m y keyboard
-#define ABUF_INIT {NULL, 0} // inicializar el buffer con apuntador nulo y tamaño de 0
+#define SBUFFER_INIT {NULL, 0} // inicializar el buffer con apuntador nulo y tamaño de 0
 
-void abAppend(struct abuf *ab, const char *s, int len) { // append al buffer
+void abAppend(struct sbuffer *ab, const char *s, int len) { // append al buffer
   char *new = realloc(ab->b, ab->len + len); // se alloca memoria para la nueva string 
   if (new == NULL) return;
   memcpy(&new[ab->len], s, len); // se copia la stiring s despues de la info de buffer b
   ab->b = new;
   ab->len += len;
 }
-void abFree(struct abuf *ab) { // liberar el apuntador y la string del buffer
+void abFree(struct sbuffer *ab) { // liberar el apuntador y la string del buffer
   free(ab->b);
 }
 
@@ -78,19 +76,18 @@ void clearScreen() {
 
 void die(const char *s) {
   clearScreen();
-
   perror(s);
   exit(1);
 }
 
 void disableRawMode() {
-  if(tcsetattr(STDIN_FILENO, TCSAFLUSH, &E.orig_termios) == -1) die("tcsetattr");
+  if(tcsetattr(STDIN_FILENO, TCSAFLUSH, &term.orig_termios) == -1) die("tcsetattr");
 }
 /* Just press Ctrl-C to start a fresh line of input to your shell, and type in reset and press Enter.*/
 void enableRawMode() {
-  if(tcgetattr(STDIN_FILENO, &E.orig_termios) == -1) die("tcgetattr");
+  if(tcgetattr(STDIN_FILENO, &term.orig_termios) == -1) die("tcgetattr");
   atexit(disableRawMode); // comes from stdlib.h
-  struct termios raw = E.orig_termios;
+  struct termios raw = term.orig_termios;
   raw.c_iflag &= ~(ICRNL |IXON | INPCK | ISTRIP | BRKINT); // c_iflag = input flag  BRKINT, INPCK, ISTRIP no son necesarios son por costumbre
   raw.c_oflag &= ~(OPOST); // c_oflag = output flags 
   raw.c_cflag |= (CS8); // solo por rutina no es necesario realmente 
@@ -169,39 +166,39 @@ int getWindowSize(int *rows, int *cols) {
 
 
 void editorInsertRow(int at, char *s, size_t len) {
-  if (at < 0 || at > E.numrows) return;
-  E.row = realloc(E.row, sizeof(erow) * (E.numrows + 1)); // se realloca memoria, haciendo crecer a e.row con la nueva linea se usa el espacio de erow
-  memmove(&E.row[at + 1], &E.row[at], sizeof(erow) * (E.numrows - at));  // make room at specified index
+  if (at < 0 || at > term.numrows) return;
+  term.row = realloc(term.row, sizeof(renglon) * (term.numrows + 1)); // se realloca memoria, haciendo crecer a term.row con la nueva linea se usa el espacio de renglon
+  memmove(&term.row[at + 1], &term.row[at], sizeof(renglon) * (term.numrows - at));  // make room at specified index
 
-  E.row[at].size = len;
-  E.row[at].chars = malloc(len + 1); // se prepara el espacio para el renglon
-  memcpy(E.row[at].chars, s, len);
-  E.row[at].chars[len] = '\0';
-  E.numrows++;
+  term.row[at].size = len;
+  term.row[at].chars = malloc(len + 1); // se prepara el espacio para el renglon
+  memcpy(term.row[at].chars, s, len);
+  term.row[at].chars[len] = '\0';
+  term.numrows++;
 }
 
-void editorFreeRow(erow *row) {
+void editorFreeRow(renglon *row) {
   free(row->chars); // libera chars 
 }
 
 void editorDelRow(int at) {
-  if (at < 0 || at >= E.numrows) return;
-  editorFreeRow(&E.row[at]);  //free the memory owned by the row 
-  memmove(&E.row[at], &E.row[at + 1], sizeof(erow) * (E.numrows - at - 1)); // overwrite deleted row
-  E.numrows--; 
+  if (at < 0 || at >= term.numrows) return;
+  editorFreeRow(&term.row[at]);  //free the memory owned by the row 
+  memmove(&term.row[at], &term.row[at + 1], sizeof(renglon) * (term.numrows - at - 1)); // overwrite deleted row
+  term.numrows--; 
 }
 
 char *editorRowsToString(int *buflen) {
   int totlen = 0;
   int j;
-  for (j = 0; j < E.numrows; j++)
-    totlen += E.row[j].size + 1; // length of each row o text 
+  for (j = 0; j < term.numrows; j++)
+    totlen += term.row[j].size + 1; // length of each row o text 
   *buflen = totlen;
   char *buf = malloc(totlen); // allocate required memory 
   char *p = buf; // p apunta a buf  y se modifica en el loop 
-  for (j = 0; j < E.numrows; j++) { // loop through the rows
-    memcpy(p, E.row[j].chars, E.row[j].size); // memcopy the contents of each row to the end of the buffer appending new lines as weell 
-    p += E.row[j].size;
+  for (j = 0; j < term.numrows; j++) { // loop through the rows
+    memcpy(p, term.row[j].chars, term.row[j].size); // memcopy the contents of each row to the end of the buffer appending new lines as weell 
+    p += term.row[j].size;
     *p = '\n';
     p++;
   }
@@ -219,7 +216,7 @@ void editorOpen(char *filename) {
     while (linelen > 0 && (line[linelen - 1] == '\n' ||
                            line[linelen - 1] == '\r'))
       linelen--;
-    editorInsertRow(E.numrows,line, linelen); // aqui se agrega un renglon leido
+    editorInsertRow(term.numrows,line, linelen); // aqui se agrega un renglon leido
   }
   free(line);
   fclose(fp);
@@ -228,16 +225,16 @@ void editorOpen(char *filename) {
 void editorSetStatusMessage(const char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
-  vsnprintf(E.statusmsg, sizeof(E.statusmsg), fmt, ap);
+  vsnprintf(term.statusmsg, sizeof(term.statusmsg), fmt, ap);
   va_end(ap);
-  E.statusmsg_time = time(NULL);
+  term.statusmsg_time = time(NULL);
 }
 
 void goToRow(int row){
-  int res = ((row - E.rowoff) - 1);
-  if (row < E.screenrows)
+  int res = ((row - term.rowoff) - 1);
+  if (row < term.screenrows)
   {
-    if (E.rowoff != row)
+    if (term.rowoff != row)
     {
       if (res < 0)
       {
@@ -259,43 +256,43 @@ void goToRow(int row){
 }
 
 void editorMoveCursor(int key) {
-  erow *row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
+  renglon *row = (term.cy >= term.numrows) ? NULL : &term.row[term.cy];
 
   switch (key) { // un switch para mover el cursor dependiendo  de WASD
     case ARROW_LEFT:
-      if(E.cx != 0)
-      E.cx--;
-      else if (E.cy > 0) {
-        E.cy--;
-        E.cx = E.row[E.cy].size;
+      if(term.cx != 0)
+      term.cx--;
+      else if (term.cy > 0) {
+        term.cy--;
+        term.cx = term.row[term.cy].size;
       }
       break;
     case ARROW_RIGHT:
-      if (row && E.cx < row->size)
-      E.cx++;
-      else if (row && E.cx == row->size) {
-        E.cy++;
-        E.cx = 0;
+      if (row && term.cx < row->size)
+      term.cx++;
+      else if (row && term.cx == row->size) {
+        term.cy++;
+        term.cx = 0;
       }
       break;
     case ARROW_UP:
-      if(E.cy != 0)
-      E.cy--;
+      if(term.cy != 0)
+      term.cy--;
       break;
     case ARROW_DOWN:
-      if(E.cy < E.numrows) // no puedes bajar mas de los renglones
-      E.cy++;
+      if(term.cy < term.numrows) // no puedes bajar mas de los renglones
+      term.cy++;
       break;
   }
 
-  row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
+  row = (term.cy >= term.numrows) ? NULL : &term.row[term.cy];
   int rowlen = row ? row->size : 0;
-  if (E.cx > rowlen) { // en caso de que al bajar el renglon este sea mas corto al actual
-    E.cx = rowlen;
+  if (term.cx > rowlen) { // en caso de que al bajar el renglon este sea mas corto al actual
+    term.cx = rowlen;
   }
 }
 
-void editorRowInsertChar(erow *row, int at, int c) {
+void editorRowInsertChar(renglon *row, int at, int c) {
   if (at < 0 || at > row->size) at = row->size;
   row->chars = realloc(row->chars, row->size + 2);
   memmove(&row->chars[at + 1], &row->chars[at], row->size - at + 1); // como memcpy pero salva que el source y destination arrays sean el mismo
@@ -303,14 +300,14 @@ void editorRowInsertChar(erow *row, int at, int c) {
   row->chars[at] = c;
 }
 
-void editorRowAppendString(erow *row, char *s, size_t len) {
+void editorRowAppendString(renglon *row, char *s, size_t len) {
   row->chars = realloc(row->chars, row->size + len + 1); // reallocate 
   memcpy(&row->chars[row->size], s, len); // copy memory
   row->size += len; // se añade el length 
   row->chars[row->size] = '\0'; // el endline
 }
 
-void editorRowDelChar(erow *row, int at) {
+void editorRowDelChar(renglon *row, int at) {
   if (at < 0 || at >= row->size) return; // valida que sea una posicion valida
   memmove(&row->chars[at], &row->chars[at + 1], row->size - at); // se mueve un bit para atras "borrando el char"
   row->size--;
@@ -318,71 +315,71 @@ void editorRowDelChar(erow *row, int at) {
 
 
 void editorInsertChar(int c) {
-  if (E.cy == E.numrows) { // cursor esta en el final 
-    editorInsertRow(E.numrows,"", 0); // se agrega renglon nuevo 
+  if (term.cy == term.numrows) { // cursor esta en el final 
+    editorInsertRow(term.numrows,"", 0); // se agrega renglon nuevo 
   }
-  editorRowInsertChar(&E.row[E.cy], E.cx, c);
-  E.cx++;
+  editorRowInsertChar(&term.row[term.cy], term.cx, c);
+  term.cx++;
 }
 
 void editorInsertNewline() {
-  if (E.cx == 0) {
-    editorInsertRow(E.cy, "", 0);
+  if (term.cx == 0) {
+    editorInsertRow(term.cy, "", 0);
   } else {
-    erow *row = &E.row[E.cy];
-    editorInsertRow(E.cy + 1, &row->chars[E.cx], row->size - E.cx); // la columna se mantiene 
-    row = &E.row[E.cy];
-    row->size = E.cx;
+    renglon *row = &term.row[term.cy];
+    editorInsertRow(term.cy + 1, &row->chars[term.cx], row->size - term.cx); // la columna se mantiene 
+    row = &term.row[term.cy];
+    row->size = term.cx;
     row->chars[row->size] = '\0';
   }
-  E.cy++;
-  E.cx = 0;
+  term.cy++;
+  term.cx = 0;
 }
 void editorDelChar() {
-  if (E.cy == E.numrows) return; // si el cursor esta fuera del tamaño regresa
-  if (E.cx == 0 && E.cy == 0) return; // si es el inicio de un renglon
-  erow *row = &E.row[E.cy]; // se trae el row actual
-  if (E.cx > 0) { // si hay un caracter a la izq se borra sino, no 
-    editorRowDelChar(row, E.cx - 1);
-    E.cx--;
+  if (term.cy == term.numrows) return; // si el cursor esta fuera del tamaño regresa
+  if (term.cx == 0 && term.cy == 0) return; // si es el inicio de un renglon
+  renglon *row = &term.row[term.cy]; // se trae el row actual
+  if (term.cx > 0) { // si hay un caracter a la izq se borra sino, no 
+    editorRowDelChar(row, term.cx - 1);
+    term.cx--;
   } else {
-    E.cx = E.row[E.cy -1].size;
-    editorRowAppendString(&E.row[E.cy -1], row->chars, row->size);
-    editorDelRow(E.cy);
-    E.cy--;
+    term.cx = term.row[term.cy -1].size;
+    editorRowAppendString(&term.row[term.cy -1], row->chars, row->size);
+    editorDelRow(term.cy);
+    term.cy--;
   }
 }
 
 
 // function to scroll and know in which row we are 
 void editorScroll() {
-  if (E.cy < E.rowoff) { // se basa en la posicion actual de y en la terminal  y del rowoff para calcularlo
-    E.rowoff = E.cy;
+  if (term.cy < term.rowoff) { // se basa en la posicion actual de y en la terminal  y del rowoff para calcularlo
+    term.rowoff = term.cy;
   }
-  if (E.cy >= E.rowoff + E.screenrows) { // si esta "out of bounds"
-    E.rowoff = E.cy - E.screenrows + 1;
+  if (term.cy >= term.rowoff + term.screenrows) { // si esta "out of bounds"
+    term.rowoff = term.cy - term.screenrows + 1;
   }
-  if (E.cx < E.coloff) { // calcula posicion de columna
-    E.coloff = E.cx;
+  if (term.cx < term.coloff) { // calcula posicion de columna
+    term.coloff = term.cx;
   }
-  if (E.cx >= E.coloff + E.screencols) { // si esta out of bounds en x
-    E.coloff = E.cx - E.screencols + 1;
+  if (term.cx >= term.coloff + term.screencols) { // si esta out of bounds en x
+    term.coloff = term.cx - term.screencols + 1;
   }
 }
 
 
 
-void editorDrawRows(struct abuf *ab) {
+void editorDrawRows(struct sbuffer *ab) {
   int y;
-  for (y = 0; y < E.screenrows; y++) {
-    int filerow = y + E.rowoff;
-    if( y >= E.numrows){
-    if (y == E.screenrows / 2 && E.numrows == 0) { // cuando se encuentra  la mitad de la terminal
+  for (y = 0; y < term.screenrows; y++) {
+    int filerow = y + term.rowoff;
+    if( y >= term.numrows){
+    if (y == term.screenrows / 2 && term.numrows == 0) { // cuando se encuentra  la mitad de la terminal
       char welcome[80];
       int welcomelen = snprintf(welcome, sizeof(welcome),
         "Bienvenidos al Editor");
-      if (welcomelen > E.screencols) welcomelen = E.screencols;
-      int padding = (E.screencols - welcomelen) / 2; // solo se calcula el padding , de rows para que el mensaje este en el centro
+      if (welcomelen > term.screencols) welcomelen = term.screencols;
+      int padding = (term.screencols - welcomelen) / 2; // solo se calcula el padding , de rows para que el mensaje este en el centro
       if (padding) {
         abAppend(ab, "*", 1); // cuando es zero (mera izq de la terminal)
         padding--;
@@ -393,10 +390,10 @@ void editorDrawRows(struct abuf *ab) {
       abAppend(ab, "*", 1);
     }
    } else {
-       int len = E.row[filerow].size - E.coloff;  //size del renglon  
+       int len = term.row[filerow].size - term.coloff;  //size del renglon  
        if (len < 0) len = 0;
-       if (len > E.screencols) len = E.screencols; 
-       abAppend(ab, &E.row[filerow].chars[E.coloff], len); // se agregan los erows al buffer actual usando chars  para que este clean
+       if (len > term.screencols) len = term.screencols; 
+       abAppend(ab, &term.row[filerow].chars[term.coloff], len); // se agregan los renglons al buffer actual usando chars  para que este clean
    }
 
     abAppend(ab, "\x1b[K", 3);  // escape sequence [K  erases part of the current line, 2 toda la linea, 1 a la izq del cursor, y 0 a la derecha , 0 es el default, y se dan 3 bytes
@@ -406,25 +403,25 @@ void editorDrawRows(struct abuf *ab) {
 }
 
 
-void editorDrawMessageBar(struct abuf *ab) {
+void editorDrawMessageBar(struct sbuffer *ab) {
   abAppend(ab, "\x1b[K", 3);  // escape sequence [K clears message bar ]
-  int msglen = strlen(E.statusmsg);
-  if (msglen > E.screencols) msglen = E.screencols; // se corta el mensaje para que quedpa en todo el width de la pantalla
-  if (msglen && time(NULL) - E.statusmsg_time < 5) // message time solo dura 5 segundos por el momento la pantalla se refreseca despues de cada keypress
-    abAppend(ab, E.statusmsg, msglen);
+  int msglen = strlen(term.statusmsg);
+  if (msglen > term.screencols) msglen = term.screencols; // se corta el mensaje para que quedpa en todo el width de la pantalla
+  if (msglen && time(NULL) - term.statusmsg_time < 5) // message time solo dura 5 segundos por el momento la pantalla se refreseca despues de cada keypress
+    abAppend(ab, term.statusmsg, msglen);
 }
 
 void editorRefreshScreen() { // limpia la pantalla
   editorScroll();
-  struct abuf ab = ABUF_INIT; // inicializo el bugger ABUF_INIT es funcion macro que pone al apuntador viendo a null y el lenght en 0
+  struct sbuffer ab = SBUFFER_INIT; // inicializo el bugger sbuffer_INIT es funcion macro que pone al apuntador viendo a null y el lenght en 0
                                //abAppend(&ab, "\x1b[2J", 4); el 4 significa 5 bytoues of of terminal \x1b es el escpaee character  escape sequences always start with this and are followe by [ characters 
   abAppend(&ab, "\x1b[H", 3);  // estas funciones [ dicen  a la terminal como mover el keyboard,mouse etc. el comando J  limpia la pantalla despues de /x1b el 2 es un param que 
   editorDrawRows(&ab);         // le dice sea toda la pantalla, si usas 1 envez de 2 seria hasta donde esta el cursos
-  editorDrawMessageBar(&ab);    // aqui estan todas las escape sequences http://ascii-table.com/ansi-escape-sequences-vt-100.php
+  editorDrawMessageBar(&ab);    // aqui estan todas las escape sequences http://ascii-tablterm.com/ansi-escape-sequences-vt-100.php
                                // user guide -> https://vt100.net/docs/vt100-ug/chapter3.html
                               // AQUi el [H,3 mueve el cursor al inicio del aterminal 
-  char buf[32];                               // se resta E.rowoff para tener la posicion relativa tanto a la terminal como al archivo
-  snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowoff) + 1, (E.cx - E.coloff) + 1); // se usa escape sequence [H  la cual mueve el cursos, usando 2 variables %d y %d que serian E.cy y E.cx ambas + 1
+  char buf[32];                               // se resta term.rowoff para tener la posicion relativa tanto a la terminal como al archivo
+  snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (term.cy - term.rowoff) + 1, (term.cx - term.coloff) + 1); // se usa escape sequence [H  la cual mueve el cursos, usando 2 variables %d y %d que serian term.cy y term.cx ambas + 1
   abAppend(&ab, buf, strlen(buf));
   write(STDOUT_FILENO, ab.b , ab.len);  
   abFree(&ab);
@@ -470,8 +467,8 @@ int numberOcurrences(const char* findtext){
     return  0;
   }
   
-  for (int rows = 0; rows < E.numrows; rows++){
-    erow *actualRow = &E.row[rows];
+  for (int rows = 0; rows < term.numrows; rows++){
+    renglon *actualRow = &term.row[rows];
     const char *p = actualRow->chars;
     while( (p = strstr(p,findtext)) != NULL){
       p += strlen(findtext);
@@ -487,8 +484,8 @@ void replaceWord(const char* oldW, const char* newW) {
     int newWlen = strlen(newW); 
     int oldWlen = strlen(oldW); 
   
-    for(int rows = 0; rows < E.numrows; rows++){
-    erow *actualRow = &E.row[rows];
+    for(int rows = 0; rows < term.numrows; rows++){
+    renglon *actualRow = &term.row[rows];
     const char *p = actualRow->chars;
     int ocurrences =  numberOcurrences(oldW);
     if(ocurrences > 0){
@@ -507,19 +504,19 @@ void replaceWord(const char* oldW, const char* newW) {
 
 
 void readCommand(){
-  free(E.command);
-  E.command = editorPrompt("Escribe el comando %s");
-  char *findText = E.command;
+  free(term.command);
+  term.command = editorPrompt("Escribe el comando %s");
+  char *findText = term.command;
   char delim[] = " ";
   char aux[100];
-  editorSetStatusMessage("%s comando escrito", E.command);
-  switch(E.command[0]){
+  editorSetStatusMessage("%s comando escrito", term.command);
+  switch(term.command[0]){
     case ':':
-        if(E.command[1] == 'q') {
-          free(E.command);
-          E.command = editorPrompt("Quieres guardar los cambios? (y/n): %s");
+        if(term.command[1] == 'q') {
+          free(term.command);
+          term.command = editorPrompt("Quieres guardar los cambios? (y/n): %s");
 
-          if (E.command[0] == 'y')
+          if (term.command[0] == 'y')
           {
             editorSave();
             clearScreen();
@@ -529,15 +526,15 @@ void readCommand(){
             exit(0);
           }
         
-        }else if(E.command[1] == 'e'){
+        }else if(term.command[1] == 'e'){
           rawMode = 1; 
-        }else if(E.command[1] == 'w'){
+        }else if(term.command[1] == 'w'){
           editorSave();
           clearScreen();
           exit(0); 
-        }else if(E.command[1] == 'f'){
-          if(strlen(E.command) + 1 > 4){
-          strcpy(E.command,findText);
+        }else if(term.command[1] == 'f'){
+          if(strlen(term.command) + 1 > 4){
+          strcpy(term.command,findText);
           memmove(findText,findText+3,strlen(findText));
           int ocurrences = numberOcurrences(findText);
           char socurrences[10];
@@ -548,8 +545,8 @@ void readCommand(){
           strcat(message, " veces, presione cualquier tecla y despues Enter para continuar.");
           editorPrompt(message);
    }
-        }else if(E.command[1] == 'r'){
-          strcpy(E.command,findText);
+        }else if(term.command[1] == 'r'){
+          strcpy(term.command,findText);
           memmove(findText,findText+3,strlen(findText));
           char *ptr = strtok(findText,delim);
           char *toReplace, *replacement;
@@ -558,12 +555,12 @@ void readCommand(){
           replacement = ptr;
           replaceWord(toReplace,replacement);
           editorRefreshScreen();
-        } else if (E.command[1] == 'n')
+        } else if (term.command[1] == 'n')
         {
-          E.cy = 0;
-          free(E.command);
-          E.command = editorPrompt("Escribe el renglon al que quieres ir: %s");
-          int num = atoi(E.command);
+          term.cy = 0;
+          free(term.command);
+          term.command = editorPrompt("Escribe el renglon al que quieres ir: %s");
+          int num = atoi(term.command);
           goToRow(num);
         }
         break;
@@ -598,7 +595,7 @@ void editorProcessKeypress() { // handles keypress
       case PAGE_UP:
     case PAGE_DOWN:
       {
-        int times = E.screenrows;
+        int times = term.screenrows;
         while (times--)
           editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
       }
@@ -622,17 +619,17 @@ void editorProcessKeypress() { // handles keypress
   }
 }
 void initEditor() {
-  E.cx = 0;
-  E.cy = 0;
-  E.rowoff = 0;
-  E.coloff = 0;
-  E.numrows = 0;
-  E.row = NULL;
-  E.command = NULL;
-  E.statusmsg[0] = '\0';
-  E.statusmsg_time = 0;
-  if (getWindowSize(&E.screenrows, &E.screencols) == -1) die("getWindowSize"); // llamo get windows size al iniciar el proyecto , para la struct de la terminal
-  E.screenrows -=1;
+  term.cx = 0;
+  term.cy = 0;
+  term.rowoff = 0;
+  term.coloff = 0;
+  term.numrows = 0;
+  term.row = NULL;
+  term.command = NULL;
+  term.statusmsg[0] = '\0';
+  term.statusmsg_time = 0;
+  if (getWindowSize(&term.screenrows, &term.screencols) == -1) die("getWindowSize"); // llamo get windows size al iniciar el proyecto , para la struct de la terminal
+  term.screenrows -=1;
 }
 
 int main (int argc, char *argv[]) {

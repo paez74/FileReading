@@ -132,8 +132,6 @@ int editorReadKey() { // wait for one keypress and return it
            if (seq[2] == '~') { 
                switch(seq[1]){
                    case '3': return DEL_KEY;
-                   case '5': return PAGE_UP;
-                   case '6': return PAGE_DOWN;
                }
            }
         } else {
@@ -591,14 +589,6 @@ void editorProcessKeypress() { // handles keypress
       break;
     case CTRL_KEY('q'): // si es ctl + q se cierra la pantalla 
        rawMode = 0;
-      break;
-      case PAGE_UP:
-    case PAGE_DOWN:
-      {
-        int times = term.screenrows;
-        while (times--)
-          editorMoveCursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
-      }
       break;
       case BACKSPACE:
       case DEL_KEY:

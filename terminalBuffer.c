@@ -567,8 +567,14 @@ void readCommand(){
           strcpy(E.command,findText);
           memmove(findText,findText+3,strlen(findText));
           int ocurrences = numberOcurrences(findText);
-          editorSetStatusMessage("%d el resultado es:", ocurrences);
-          }
+          char socurrences[10];
+          char message[20];
+          strcpy(message,"Se encontro ");
+          snprintf( socurrences, 10, "%d", ocurrences );
+          strcat(message,socurrences);
+          strcat(message, " veces, presione cualquier tecla y despues Enter para continuar.");
+          editorPrompt(message);
+   }
         }else if(E.command[1] == 'r'){
           strcpy(E.command,findText);
           memmove(findText,findText+3,strlen(findText));
@@ -599,7 +605,6 @@ void editorSave() {
     if(write(fd, buf, len) == len){ // se escribe el buffer
     close(fd); // se cierra la file
     free(buf); 
-    editorSetStatusMessage("%d bytes guardados", len); // mensaje de que si se guardo , se puede quitar
     return; // return 
     }
   }
@@ -617,10 +622,7 @@ void editorProcessKeypress() { // handles keypress
     case CTRL_KEY('q'): // si es ctl + q se cierra la pantalla 
        rawMode = 0;
       break;
-    case CTRL_KEY('s'): // maps ctl + s para que le de save
-      editorSave();
-      break;
-    case PAGE_UP:
+      case PAGE_UP:
     case PAGE_DOWN:
       {
         int times = E.screenrows;
@@ -666,7 +668,6 @@ int main (int argc, char *argv[]) {
     char *temp = argv[1];
     strcpy(fileName,temp);
     if(argc >= 2) editorOpen(argv[1]);
-    editorSetStatusMessage("HELP: Ctrl-Q = quit | Ctrl-S = save");
     while (1) {
         editorRefreshScreen();
         if(!rawMode) {

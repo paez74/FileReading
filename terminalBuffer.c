@@ -1,3 +1,5 @@
+// Christopher David Parga Jaramillo A00818942
+// Gustavo Paez Villalobos A01039751
 #define _DEFAULT_SOURCE
 #define _BSD_SOURCE
 #define _GNU_SOURCE
@@ -18,9 +20,7 @@
 
 typedef struct erow { // estructura para guardar una linea de texto entro de la terminal 
     int size;
-    int rsize;
     char *chars;
-    char *render; // render para tabs y espacios  no veo que sea necesario podriamos quitarlo all together
 } erow;
 
 struct editorConfig { // estructura para obtener el valor de la terminal para poder calcular rows 
@@ -166,26 +166,7 @@ int getWindowSize(int *rows, int *cols) {
 }
 
 
-void editorUpdateRow(erow *row) { // esta funcion toma los renders del renglon para rehacer el renglanon en la terminal y mostrarlo de manera correcta si es que tiene tabs etc
-  int tabs = 0;
-  int j;
-  for (j = 0; j < row->size; j++)
-    if (row->chars[j] == '\t') tabs++; // va eliminando tabs
-  free(row->render);
-  row->render = malloc(row->size + tabs*7 + 1);
 
-  int idx = 0;
-  for (j = 0; j < row->size; j++) {
-    if (row->chars[j] == '\t') {
-      row->render[idx++] = ' ';
-      while (idx % 8 != 0) row->render[idx++] = ' ';
-    } else {
-      row->render[idx++] = row->chars[j];
-    }
-  }
-  row->render[idx] = '\0';
-  row->rsize = idx; // idx tiene el numero de caracteres copiados a render 
-}
 
 void editorInsertRow(int at, char *s, size_t len) {
   if (at < 0 || at > E.numrows) return;
@@ -196,14 +177,10 @@ void editorInsertRow(int at, char *s, size_t len) {
   E.row[at].chars = malloc(len + 1); // se prepara el espacio para el renglon
   memcpy(E.row[at].chars, s, len);
   E.row[at].chars[len] = '\0';
-  E.row[at].rsize = 0;
-  E.row[at].render = NULL;
-  editorUpdateRow(&E.row[at]); // updatea el renglon
   E.numrows++;
 }
 
 void editorFreeRow(erow *row) {
-  free(row->render); // libera espacio 
   free(row->chars); // libera chars 
 }
 
@@ -324,7 +301,6 @@ void editorRowInsertChar(erow *row, int at, int c) {
   memmove(&row->chars[at + 1], &row->chars[at], row->size - at + 1); // como memcpy pero salva que el source y destination arrays sean el mismo
   row->size++;
   row->chars[at] = c;
-  editorUpdateRow(row);
 }
 
 void editorRowAppendString(erow *row, char *s, size_t len) {
@@ -332,14 +308,12 @@ void editorRowAppendString(erow *row, char *s, size_t len) {
   memcpy(&row->chars[row->size], s, len); // copy memory
   row->size += len; // se añade el length 
   row->chars[row->size] = '\0'; // el endline
-  editorUpdateRow(row);
 }
 
 void editorRowDelChar(erow *row, int at) {
   if (at < 0 || at >= row->size) return; // valida que sea una posicion valida
   memmove(&row->chars[at], &row->chars[at + 1], row->size - at); // se mueve un bit para atras "borrando el char"
   row->size--;
-  editorUpdateRow(row);
 }
 
 
@@ -360,7 +334,6 @@ void editorInsertNewline() {
     row = &E.row[E.cy];
     row->size = E.cx;
     row->chars[row->size] = '\0';
-    editorUpdateRow(row); // la row actual se updatea con espacio vacio
   }
   E.cy++;
   E.cx = 0;
@@ -420,10 +393,10 @@ void editorDrawRows(struct abuf *ab) {
       abAppend(ab, "*", 1);
     }
    } else {
-       int len = E.row[filerow].rsize - E.coloff;  // se usa rsize por el render de cada row y evitar malformaciones
+       int len = E.row[filerow].size - E.coloff;  //size del renglon  
        if (len < 0) len = 0;
        if (len > E.screencols) len = E.screencols; 
-       abAppend(ab, &E.row[filerow].render[E.coloff], len); // se agregan los erows al buffer actual usando render para que este clean
+       abAppend(ab, &E.row[filerow].chars[E.coloff], len); // se agregan los erows al buffer actual usando chars  para que este clean
    }
 
     abAppend(ab, "\x1b[K", 3);  // escape sequence [K  erases part of the current line, 2 toda la linea, 1 a la izq del cursor, y 0 a la derecha , 0 es el default, y se dan 3 bytes
@@ -527,9 +500,9 @@ void replaceWord(const char* oldW, const char* newW) {
         strcpy(actualRow->chars, buffer);
         p++;
       }
-      editorUpdateRow(actualRow); 
     }
   }
+
 } 
 
 
